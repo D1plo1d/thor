@@ -13,7 +13,7 @@ var session = require(process.argv[2]);
 // custom logic at the start of a websocket connection. For example onOpen can
 // be used to send a authentication message or to send a message to select a
 // channel or room in the scenario where the websocket is used for pubsub.
-session.onOpen ||= function onOpen(socket, task, id, fn) {
+session.onOpen = session.onOpen || function onOpen(socket, task, id, fn) {
   fn(undefined);
 }
 
@@ -54,7 +54,7 @@ process.on('message', function message(task) {
 
   socket.on('open', function open() {
     process.send({ type: 'open', duration: Date.now() - now, id: task.id, concurrent: concurrent });
-    session.onOpen(function afterOpen(err) {
+    session.onOpen(socket, task, task.id, function afterOpen(err) {
       if (err) handleError(err, socket, task.id);
       write(socket, task, task.id);
     });
