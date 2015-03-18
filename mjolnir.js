@@ -9,6 +9,14 @@ var Socket = require('ws')
 //
 var session = require(process.argv[2]);
 
+// onOpen placeholder. onOpen is an optional generator function for inserting
+// custom logic at the start of a websocket connection. For example onOpen can
+// be used to send a authentication message or to send a message to select a
+// channel or room in the scenario where the websocket is used for pubsub.
+session.onOpen ||= function onOpen(socket, task, id, fn) {
+  fn(undefined);
+}
+
 //
 // WebSocket connection details.
 //
@@ -46,8 +54,10 @@ process.on('message', function message(task) {
 
   socket.on('open', function open() {
     process.send({ type: 'open', duration: Date.now() - now, id: task.id, concurrent: concurrent });
-    write(socket, task, task.id);
-
+    session.onOpen(function afterOpen(err) {
+      if (err) handleError(err, socket, task.id);
+      write(socket, task, task.id);
+    });
     // As the `close` event is fired after the internal `_socket` is cleaned up
     // we need to do some hacky shit in order to tack the bytes send.
   });
@@ -91,6 +101,21 @@ process.on('message', function message(task) {
 });
 
 /**
+ * Helper function from handling errors writing to the socket or in onOpen.
+ *
+ * @param {Error} err
+ * @param {WebSocket} socket WebSocket connection that caused the error
+ * @param {String} id
+ * @api private
+ */
+function handleError(err, socket, id) {
+  process.send({ type: 'error', message: err.message, concurrent: --concurrent, id: id });
+
+  socket.close();
+  delete connections[id];
+}
+
+/**
  * Helper function from writing messages to the socket.
  *
  * @param {WebSocket} socket WebSocket connection we should write to
@@ -107,13 +132,7 @@ function write(socket, task, id, fn) {
       binary: binary,
       mask: masked
     }, function sending(err) {
-      if (err) {
-        process.send({ type: 'error', message: err.message, concurrent: --concurrent, id: id });
-
-        socket.close();
-        delete connections[id];
-      }
-
+      if (err) handleError(err, socket, id);
       if (fn) fn(err);
     });
   });
